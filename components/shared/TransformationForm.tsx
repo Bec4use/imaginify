@@ -29,8 +29,10 @@ import {
   transformationTypes,
 } from "@/constants";
 import { CustomField } from "./CustomField";
-import { useState } from "react";
-import { AspectRatioKey } from "@/lib/utils";
+import { useState, useTransition } from "react";
+import { AspectRatioKey, debounce, deepMergeObjects } from "@/lib/utils";
+import { updateCredits } from "@/lib/actions/user.actions";
+import MediaUploader from "./MediaUploader";
 
 export const formSchema = z.object({
   title: z.string(),
@@ -53,7 +55,8 @@ const TransformationForm = ({
   const [newTransformation, setNewTransformation] = useState<Transformations | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
-  const [isTransformationConfig, setIsTransformationConfig] = useState(config);
+  const [transformationConfig, setTransformationConfig] = useState(config);
+  const [isPending, startTransition] = useTransition()
 
   const initiaValues =
     data && action === "Update"
@@ -79,17 +82,54 @@ const TransformationForm = ({
   const onSelectFieldHandler = (
     value: string,
     onChangeField: (value: string) => void
-  ) => {};
+  ) => {
+    const imageSize = aspectRatioOptions[value as AspectRatioKey]
+
+    setImage((prevState: any) => ({
+      ...prevState,
+      aspecRatio: imageSize.aspectRatio,
+      width : imageSize.width,
+      height: imageSize.height,
+    }))
+
+    setNewTransformation(transformationType.config);
+
+    return onChangeField(value)
+  }
 
   const onInputChangeHandler = (
     fieldName: string,
     value: string,
     type: string,
     onChangeField: (value: string) => void
-  ) => {};
+  ) => {
+    debounce(() => {
+      setNewTransformation((prevState: any) => ({
+        ...prevState,
+        [type] : {
+          ...prevState?.[type],
+          [fieldName === 'prompt' ? 'prompt' : 'to' ]:value
+        }
+      }))
 
-  const onTransformHandler = () => {
+      return onChangeField(value)
+    }, 1000);
+  }
 
+  // TODO: Return to update Credits
+  const onTransformHandler = async () => {
+    setIsTransforming(true)
+
+    setTransformationConfig(
+      deepMergeObjects(newTransformation,
+      transformationConfig)
+    )
+
+    setNewTransformation(null)
+
+    startTransition(async () => {
+      // await updateCredits(userId, creditFee)
+    })
   }
 
   return (
@@ -180,6 +220,23 @@ const TransformationForm = ({
           </div>
         )}
 
+        <div className="media-uploader-field">
+          <CustomField 
+            control={form.control}
+            name = "publicId"
+            className="flex size-full flex-col"
+            render={({ field }) => (
+              <MediaUploader 
+              onValueChange={field.onChange}
+              setImage={setImage}
+              publicId={field.value}
+              image={image}
+              type={type}
+              />
+            )}
+          />
+        </div>
+
         <div className="flex flex-col gap-4">
           <Button 
             className="submit-button capitalize"
@@ -189,14 +246,14 @@ const TransformationForm = ({
           >
             {isTransforming ? 'Transforming...' : 'Apply Transformation'}
           </Button>
-        </div>
-        <Button 
+          <Button 
           className="submit-button capitalize"
           type="submit"
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Submitting...' : 'Save Image'}
         </Button>
+        </div>
       </form>
     </Form>
   );
